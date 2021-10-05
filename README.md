@@ -31,6 +31,10 @@ Ansible is installed on the guest operating system and not required on your comp
 Opening MediaWiki for the first time might take up to a minute, since the SCSS files needs to be compiled.
 ---
 
+###Default Accounts
+* MediaWiki Admin: admin / wiki4everyone
+* Database: openresearch / m3d14w1k1
+
 ### Vagrant Commands
 
 - `vagrant up`                  -- starts vagrant environment (also provisions only on the FIRST vagrant up)

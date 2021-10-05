@@ -1,0 +1,9 @@
+---
+mysql_root_password: mysql
+
+mediawiki_name: openresearch        # "technical" name
+mediawiki_wiki_name: Openresearch   # (optional) wiki name, $wgSitename
+mediawiki_admin_name: Admin
+mediawiki_admin_password: wiki4everyone
+mediawiki_database_password: openresearch
+mediawiki_server: http:\\localhost:8080

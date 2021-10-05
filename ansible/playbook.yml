@@ -1,0 +1,673 @@
+---
+
+######################################
+#  Building the OpenResearch Stack   #
+#  with Vagrant and Ansible          #
+######################################
+
+######################################
+#  COMPATIBILITY MATRIX              #
+######################################
+
+# -------------+-----+-------------+
+# OS           | PHP | MediaWiki   |
+# -------------+-----+-------------+
+# Debian 10    | 7.3 | 1.31+
+# Ubuntu 18.04 | 7.2 | 1.31 - 1.34
+# Ubuntu 20.04 | 7.4 | 1.35+
+# -------------+-----+-------------+
+
+# https://www.mediawiki.org/wiki/Compatibility#PHP
+# https://wiki.debian.org/PHP#Available_versions
+
+
+- name: OpenResearch
+  hosts: all
+  gather_facts: no
+  become: yes
+
+  ######################################
+  #  VARS                              #
+  ######################################
+
+  vars:
+    # robertdebock.openssl
+    openssl_items:
+      - name: apache-httpd
+        common_name: "{{ ansible_fqdn }}"
+
+    # robertdebock.httpd
+    httpd_vhosts:
+      - name: mediawiki
+        template: mediawiki
+        servername: localhost
+        documentroot: /var/www/localhost/mediawiki
+    ## override not working
+    _httpd_config_directory:
+      Debian: "{{ httpd_server_root }}/sites-enabled"
+
+    # robertdebock.php
+    #php_max_execution_time: 240     # required to avoid timeout on first scss compilation (Chameleon skin)
+
+    # robertdebock.mysql
+    # mysql_root_password: mysql
+
+    # robertdebock.mediawiki
+    #mediawiki_name: openresearch
+    mediawiki_major: 1
+    mediawiki_minor: 31
+    mediawiki_release: 15
+    mediawiki_destination: /var/www/localhost/mediawiki
+
+    # MediaWiki installer
+    mediawiki_scriptpath: "/{{ mediawiki_name_prefix }}{{ mediawiki_name }}"
+
+    # geerlingguy.composer
+    composer_version_branch: '--1'
+
+    # robertdebock.cron
+    cron_jobs:
+      - name: MediaWiki runJobs.php every minute
+        minute: "*/1"
+        job: "/usr/bin/php {{ mediawiki_install_path }}/maintenance/runJobs.php --maxtime 50 > /dev/null 2>&1"
+        user: "www-data"
+
+    # adoptopenjdk_role
+    adoptopenjdk_package: adoptopenjdk-8-hotspot
+
+    # geerlingguy.elasticsearch
+    elasticsearch_version: "5.x"     # 5.6.16
+    elasticsearch_heap_size_min: 512m
+    elasticsearch_heap_size_max: 512m
+    elasticsearch_extra_options: |
+      action.auto_create_index: false
+
+    # geerlingguy.memcached
+
+
+  ######################################
+  # PRE_TASKS                          #
+  ######################################
+
+  pre_tasks:
+    ## make sure robertdebock roles requirements are met
+    - name: ensure Jinja2>=2.11.2
+      pip:
+        name: jinja2>=2.11.2
+
+    ## additional packages
+    ## TODO: pull in the additional packages based on the OS, see https://ansible-tips-and-tricks.readthedocs.io/en/latest/os-dependent-tasks/variables/
+    - name: install additional packages
+      ansible.builtin.package:
+        name:
+          - joe
+          - php7.3-curl     # ES
+          - php7.3-gd
+          - php7.3-intl
+          - php-memcached
+          - php7.3-zip
+        state: present
+
+
+  ######################################
+  # ROLES                              #
+  ######################################
+
+  roles:
+    - role: robertdebock.bootstrap
+    - role: robertdebock.epel
+    - role: robertdebock.buildtools
+    - role: robertdebock.python_pip
+    - role: robertdebock.openssl
+    - role: robertdebock.httpd
+      vars:
+        ## override not working
+        httpd_config_directory: "{{ httpd_server_root }}/sites-enabled"
+    - role: robertdebock.php
+      vars:
+        php_max_execution_time: 240
+    - role: robertdebock.mysql
+    - role: robertdebock.mediawiki
+    - role: geerlingguy.composer
+    - role: robertdebock.cron
+    - role: adoptopenjdk_role
+    - role: geerlingguy.elasticsearch
+    - role: geerlingguy.memcached
+
+
+  ######################################
+  # TASKS                              #
+  ######################################
+
+  tasks:
+    - name: disable Apache 000-default.conf
+      file:
+        path: '/etc/apache2/sites-enabled/000-default.conf'
+        state: absent
+      notify:
+        - test httpd configuration validity
+        - restart httpd
+
+    - shell: "php -r 'echo PHP_MAJOR_VERSION;'"
+      register: php_major_version
+
+    - shell: "php -r 'echo PHP_MINOR_VERSION;'"
+      register: php_minor_version
+
+    - name: PHP settings
+      ansible.builtin.blockinfile:
+        path: "/etc/php/{{ php_major_version.stdout }}.{{ php_minor_version.stdout }}/apache2/php.ini"
+        block: |
+          max_execution_time = 240
+      when:
+        - php_major_version.stdout
+        - php_minor_version.stdout
+      notify:
+        - restart httpd
+
+    - name: is LocalSettings.php present?
+      stat:
+        path: "{{ mediawiki_install_path }}/LocalSettings.php"
+      register: stat_localsettings
+
+    - name: discard existing LocalSettings.php
+      file:
+        path: "{{ mediawiki_install_path }}/LocalSettings.php"
+        state: absent
+      when: stat_localsettings
+
+      ## TODO: in case LocalSettings.php exists, we also need to drop the database to start from scratch
+
+    ######################################
+    # MediaWiki                          #
+    ######################################
+    - name: install MediaWiki
+      command: php "{{ mediawiki_install_path }}/maintenance/install.php"
+        {{ mediawiki_wiki_name | quote }} {{ mediawiki_admin_name | quote }}
+        --pass {{ mediawiki_admin_password | quote }}
+        --server {{ mediawiki_server | quote }}
+        --scriptpath {{ mediawiki_scriptpath | quote }}
+        --dbtype mysql
+        --dbserver "localhost"
+        --installdbuser root
+        --installdbpass {{ mysql_root_password | quote }}
+        --dbname {{ mediawiki_name | quote }}
+        --dbuser {{ mediawiki_name | quote }}
+        --dbpass {{ mediawiki_database_password | quote }}
+        --confpath {{ mediawiki_install_path }}
+        --lang en
+
+
+    ######################################
+    # Prepare _custom folder             #
+    ######################################
+
+
+    ######################################
+    # LocalSettings Changes 1/2          #
+    ######################################
+    - name: custom MediaWiki settings
+      ansible.builtin.blockinfile:
+        path: "{{ mediawiki_install_path }}/LocalSettings.php"
+        marker_begin: "\n# ----- Custom Settings 10 BEGIN"
+        marker_end: "# ----- Custom Settings 10 END"
+        marker: " {mark} -----"
+        block: |
+          ## short URL
+          $wgArticlePath = "/openresearch/$1";
+
+          ## debugging
+          #error_reporting( E_ALL | E_STRICT );
+          error_reporting( E_ALL );
+          ini_set("display_errors", 1);
+          $wgShowExceptionDetails = true;
+          #$wgResourceLoaderDebug = true;
+          $wgShowSQLErrors = true;
+          #$wgDebugDumpSql  = true;
+          #$wgDebugToolbar = true;
+
+          ## include _custom folder (before extensions)
+          if (file_exists( __DIR__."/_custom/10-custom-settings.php" )) {
+            require_once( __DIR__."/_custom/10-custom-settings.php" );
+          }
+
+
+    ######################################
+    #  Chameleon (disabled)              #
+    ######################################
+    - name: install Chameleon skin
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "Chameleon"
+        mediawiki_extension_install_type: "composer"
+        mediawiki_extension_disabled: true
+        mediawiki_extension_source: "mediawiki/chameleon-skin"
+        mediawiki_extension_source_version: "3.3.0"
+        mediawiki_extension_config: |
+          # wfLoadExtension( 'Bootstrap' );
+          # wfLoadSkin( 'chameleon' );
+          # $wgDefaultSkin="chameleon";
+          # $egChameleonLayoutFile= __DIR__ . "/skins/chameleon/layouts/standard.xml";
+          # $wgLogo=$wgScriptPath . "/resources/assets/core.png";
+
+
+    ######################################
+    # ElasticSearch Extensions 1/2       #
+    ######################################
+    - name: install Elastica extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "Elastica"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/Elastica-REL1_31-f9af7d6.tar.gz"
+
+    # explicitly require elasticsearch/elasticsearch 5.5.0 to avoid
+    # https://phabricator.wikimedia.org/T267106
+    # see also https://phabricator.wikimedia.org/T276854 with note about SMW
+    - name: pin composer elasticsearch version
+      ansible.builtin.command:
+        chdir: "{{ mediawiki_install_path }}"
+        cmd: "composer require --no-update elasticsearch/elasticsearch 5.5.0"
+      environment:
+        COMPOSER: composer.local.json
+        COMPOSER_PROCESS_TIMEOUT: 600
+
+    - name: get Elastica
+      ansible.builtin.command:
+        chdir: "{{ mediawiki_install_path }}/extensions/Elastica"
+        cmd: "composer install --no-dev"
+      environment:
+        COMPOSER_PROCESS_TIMEOUT: 600
+
+    - name: set ownership of Elastica directory
+      ansible.builtin.file:
+        path: "{{ mediawiki_install_path }}/extensions/Elastica"
+        state: directory
+        recurse: yes
+        owner: www-data
+        group: www-data
+
+    - name: install CirrusSearch extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "CirrusSearch"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_registration_type: "require_once"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-CirrusSearch/archive/ad9a0d9d91b632e3c16a4f0d2d623e7f4c37b9ac.tar.gz"
+        mediawiki_extension_config: |
+          $wgCirrusSearchServers = [ "127.0.0.1" ];
+          $wgSearchType = "CirrusSearch";
+          $wgCirrusSearchPrefixSearchStartsWithAnyWord = true;
+          $wgDisableSearchUpdate = true;
+
+
+    ######################################
+    # Other Extensions                   #
+    ######################################
+    - name: install AdminLinks extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "AdminLinks"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-AdminLinks/archive/refs/tags/0.4.tar.gz"
+
+    # Extension:BreadCrumbs2 2.1.0 (still required?)
+    # Extension:Cargo 1.7 (still required?)
+
+    # Extension:CategoryTree a171718 → REL1_31-44f2375
+    - name: install CategoryTree extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "CategoryTree"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/CategoryTree-REL1_31-44f2375.tar.gz"
+
+    # Extension:WikiEditor 0.5.1 → REL1_31-eb567c4
+    # Required by CodeEditor
+    - name: install WikiEditor extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "WikiEditor"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/WikiEditor-REL1_31-eb567c4.tar.gz"
+
+    # Extension:CodeEditor 886d797 → REL1_31-af53ac0
+    # Requires WikiEditor
+    - name: install CodeEditor extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "CodeEditor"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/CodeEditor-REL1_31-af53ac0.tar.gz"
+
+    # Extension:ConfirmAccount 5d98110 → REL1_31-9ca057b
+    - name: install ConfirmAccount extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "ConfirmAccount"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_registration_type: "require_once"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/ConfirmAccount-REL1_31-9ca057b.tar.gz"
+        mediawiki_extension_config: |
+          $wgConfirmAccountRequestFormItems = [
+                  'UserName'        => [ 'enabled' => true ],
+                  'RealName'        => [ 'enabled' => true ],
+                  'Biography'       => [ 'enabled' => true, 'minWords' => 5 ],
+                  'AreasOfInterest' => [ 'enabled' => true ],
+                  'CV'              => [ 'enabled' => false ],
+                  'Notes'           => [ 'enabled' => true ],
+                  'Links'           => [ 'enabled' => true ],
+                  'TermsOfService'  => [ 'enabled' => true ],
+          ];
+
+    # Extension:ConfirmEdit 1.5.1 → REL1_31-9a15106
+    - name: install ConfirmEdit extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "ConfirmEdit"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/ConfirmEdit-REL1_31-9a15106.tar.gz"
+        mediawiki_extension_config: |
+          wfLoadExtension( "ConfirmEdit/QuestyCaptcha" );
+          # $wgCaptchaClass = "QuestyCaptcha";
+          $wgCaptchaQuestions[] = array( "question" => "Germany's highest mountain?", "answer" => "Zugspitze");
+
+    - name: enable ConfirmEdit/QuestyCaptcha
+      ansible.builtin.lineinfile:
+        path: "{{ mediawiki_install_path }}/LocalSettings.php"
+        regexp: '^# \$wgCaptchaClass = "QuestyCaptcha";'
+        line: '$wgCaptchaClass = "QuestyCaptcha";'
+
+    # Extension:DataTransfer 1.1 → 1.2
+    - name: install DataTransfer extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "DataTransfer"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-DataTransfer/archive/refs/tags/1.2.tar.gz"
+
+    # Extension:HeaderTabs 1.2 → 1.3
+    - name: install HeaderTabs extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "HeaderTabs"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-HeaderTabs/archive/refs/tags/1.3.tar.gz"
+
+    # Extension:ImageMap 6ca1ad7 → REL1_31-0af380e
+    - name: install ImageMap extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "ImageMap"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/ImageMap-REL1_31-0af380e.tar.gz"
+
+    # Extension:InputBox 0.3.0 (still required?)
+
+    # Extension:LanguageSelector 4d88655
+
+    # Extension:MagicNoCache 1.5.0 (should not be required)
+
+    # Extension:Matomo 4.0.0
+    - name: install Matomo extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "Matomo"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/DaSchTour/matomo-mediawiki-extension/archive/refs/tags/v4.0.1.tar.gz"
+
+    # Extension:Maps 5.6 → 7.20.1
+    - name: install Maps extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "Maps"
+        mediawiki_extension_install_type: "composer"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "mediawiki/maps"
+        mediawiki_extension_source_version: "7.20.1"
+        mediawiki_extension_config: |
+          $egMapsGeoNamesUser = "geonamesuser";
+
+    # Extension:Nuke REL1_31-b63e643
+    - name: install Nuke extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "Nuke"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/Nuke-REL1_31-b63e643.tar.gz"
+
+    # Extension:Page_Forms 4.3 → 5.2.1
+    - name: install PageForms extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "PageForms"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-PageForms/archive/5.2.1.tar.gz"
+        mediawiki_extension_config: |
+          # $wgPageFormsAutocompleteOnAllChars = true;
+          # $wgPageFormsMaxAutocompleteValues = 3000;
+          # $wgPageFormsMaxLocalAutocompleteValues = 5000;
+          # $wgPageForms24HourTime = true;
+          # $wgPageFormsListSeparator = ";";
+
+    # Extension:ParserFunctions 1.6.0
+    - name: install ParserFunctions extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "ParserFunctions"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/ParserFunctions-REL1_31-9186edc.tar.gz"
+        mediawiki_extension_config: |
+          $wgPFEnableStringFunctions = true;
+
+    # Extension:PDFEmbed 2.0.5
+
+    # Extension:ReplaceText
+    - name: install ReplaceText extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "ReplaceText"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-ReplaceText/archive/refs/tags/1.4.1.tar.gz"
+
+    # Extension:SemanticMediaWiki 2.5.8 → 3.2.3
+    - name: install SemanticMediaWiki extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "SemanticMediaWiki"
+        mediawiki_extension_install_type: "composer"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "mediawiki/semantic-media-wiki"
+        mediawiki_extension_source_version: "3.2.3"
+        mediawiki_extension_config: |
+          enableSemantics( "openresearch.org" );
+          $smwgShowFactbox = SMW_FACTBOX_NONEMPTY;
+
+          ## TODO: clarify if ParserStrictMode should really be disabled
+          # $smwgEnabledInTextAnnotationParserStrictMode = false;
+
+          $smwgCategoryFeatures = SMW_CAT_REDIRECT | SMW_CAT_INSTANCE | SMW_CAT_HIERARCHY;
+          # $smwgQDefaultLimit = 500;
+          $smwgQMaxInlineLimit = 25000;
+          $smwgQMaxLimit = 25000;
+          $smwgQMaxSize = 25000;
+          $smwgQSortFeatures = SMW_QSORT | SMW_QSORT_UNCONDITIONAL;
+          $smwgQUpperbound = 25000;
+          # SMWResultPrinter::$maxRecursionDepth = 40;
+          # $smwgLinksInValues = true;
+          # $smwgDefaultNumRecurringEvents = 1000;
+          $smwgPageSpecialProperties[] = "_CDAT";
+          $smwgPageSpecialProperties[] = "_NEWP";
+          $smwgPageSpecialProperties[] = "_LEDT";
+          # $smwgEnabledQueryDependencyLinksStore = true;
+
+    # Extension:SemanticResultFormats 2.5.6 → 3.2.0+
+    - name: install SemanticResultFormats extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "SemanticResultFormats"
+        mediawiki_extension_install_type: "composer"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "mediawiki/semantic-result-formats"
+        mediawiki_extension_source_version: "'dev-master#46211b3 as 3.2.0'"
+        mediawiki_extension_config: |
+          $srfgFormats[] = "graph";
+          # $srfgFormats[] = "excel";
+          $srfgFormats[] = "filtered";
+
+    # Extension:SmiteSpam 0.3
+    - name: install SmiteSpam extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "SmiteSpam"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-SmiteSpam/archive/0.3.tar.gz"
+        mediawiki_extension_config: |
+          $wgSmiteSpamThreshold = 0.7;
+          $wgSmiteSpamIgnoreSmallPages = true;
+          $wgSmiteSpamIgnorePagesWithNoExternalLinks = true;
+          $wgSmiteSpamQueryPageSize = 500;
+          $wgSmiteSpamDisplayPageSize = 250;
+
+    # Extension:SyntaxHighlight 2.0
+
+    # Extension:TitleBlacklist 1.5.0 → REL1_31-631e35c
+    - name: install TitleBlacklist extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "TitleBlacklist"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/TitleBlacklist-REL1_31-631e35c.tar.gz"
+
+    # Extension:UrlGetParameters 1.5.0 → REL1_31-ff69747
+    - name: install UrlGetParameters extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "UrlGetParameters"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_registration_type: "require_once"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/UrlGetParameters-REL1_31-ff69747.tar.gz"
+
+
+    ######################################
+    # LocalSettings Changes 2/2          #
+    ######################################
+    - name: allow images and other files to be uploaded
+      ansible.builtin.lineinfile:
+        path: "{{ mediawiki_install_path }}/LocalSettings.php"
+        regexp: '^\$wgEnableUploads = false;'
+        line: '$wgEnableUploads = true;'
+
+    - name: custom MediaWiki settings
+      ansible.builtin.blockinfile:
+        path: "{{ mediawiki_install_path }}/LocalSettings.php"
+        marker_begin: "\n# ----- Custom Settings 90 BEGIN"
+        marker_end: "# ----- Custom Settings 90 END"
+        marker: " {mark} -----"
+        block: |
+          ## set number of jobs to perform per request to 0 since we use cron
+          $wgJobRunRate = 0;
+
+          ## caching
+          $wgMainCacheType = CACHE_MEMCACHED;
+          $wgParserCacheType = CACHE_MEMCACHED;
+          $wgMessageCacheType = CACHE_MEMCACHED;
+          $wgMemCachedServers = [ '127.0.0.1:11211' ];
+
+          ## file extensions
+          $wgFileExtensions = [ 'png', 'gif', 'jpg', 'jpeg', 'svg', 'webp' ];
+
+          ## attaching licensing metadata to pages
+          $wgRightsPage = ""; # Set to the title of a wiki page that describes your license/copyright
+          $wgRightsUrl = "https://creativecommons.org/licenses/by-sa/2.0/de/";
+          $wgRightsText = "CC BY-SA licenses";
+          $wgRightsIcon = "https://licensebuttons.net/l/by-sa/2.0/88x31.png";
+
+          ## include _custom folder (after extensions)
+          if (file_exists( __DIR__."/_custom/90-custom-settings.php" )) {
+            require_once( __DIR__."/_custom/90-custom-settings.php" );
+          }
+
+
+    ######################################
+    # ElasticSearch Extensions 2/2       #
+    # Search Index                       #
+    ######################################
+    - name: update search index config
+      ansible.builtin.shell:
+        cmd: php {{ mediawiki_install_path }}/extensions/CirrusSearch/maintenance/updateSearchIndexConfig.php
+
+    - name: enable search index update
+      ansible.builtin.lineinfile:
+        path: "{{ mediawiki_install_path }}/LocalSettings.php"
+        regexp: '^\$wgDisableSearchUpdate = true;'
+        line: '$wgDisableSearchUpdate = false;'
+
+    - name: bootstrap the search index 1/2
+      ansible.builtin.shell:
+        cmd: php {{ mediawiki_install_path }}/extensions/CirrusSearch/maintenance/forceSearchIndex.php --skipLinks --indexOnSkip
+
+    - name: bootstrap the search index 2/2
+      ansible.builtin.shell:
+        cmd: php {{ mediawiki_install_path }}/extensions/CirrusSearch/maintenance/forceSearchIndex.php --skipParse
+
+
+    ######################################
+    #  Ownership and Permissions         #
+    ######################################
+
+    - name: set ownership of MediaWiki directory
+      ansible.builtin.file:
+        path: "{{ mediawiki_install_path }}"
+        state: directory
+        recurse: yes
+        owner: www-data
+        group: www-data
+
+    - name: set MediaWiki directories permissions to 0755
+      command: find {{ mediawiki_install_path }} -type d -exec chmod 0755 {} \;
+
+    - name: set MediaWiki file permissions to 0644
+      command: find {{ mediawiki_install_path }} -type f -exec chmod 0644 {} \;
