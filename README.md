@@ -11,10 +11,8 @@ This project has been tested on Windows with the following versions:
 
 It might also work on other operating systems and versions. 
 
----
-**Note:**
-Ansible is installed on the guest operating system and not required on your computer. 
----
+> **Note:** Ansible is installed on the guest operating system and not required on your computer. 
+
 
 ## Getting Started
 * Clone this project to a local working directory
@@ -26,14 +24,10 @@ Ansible is installed on the guest operating system and not required on your comp
 * Ansible will download the required roles and run the play from playbook.yml
 * After a few minutes you should have a local MediaWiki running at http://localhost:8080/openresearch
 
----
-**Note:**
-Opening MediaWiki for the first time might take up to a minute, since the SCSS files needs to be compiled.
----
+> **Note:** Opening MediaWiki for the first time might take up to a minute, since the SCSS files needs to be compiled.
 
-###Default Accounts
-* MediaWiki Admin: admin / wiki4everyone
-* Database: openresearch / m3d14w1k1
+### Defaults / Variables
+* see `group_vars/all.yml`
 
 ### Vagrant Commands
 
