@@ -1,7 +1,18 @@
 ---
+# robertdebock.httpd
+httpd_vhosts:
+  - name: mediawiki
+    template: mediawiki
+    servername: localhost
+    documentroot: /var/www/localhost/mediawiki
+
+# robertdebock.mysql
 mysql_root_password: mysql
 
+# robertdebock.mediawiki
+mediawiki_destination: /var/www/localhost/mediawiki
 mediawiki_name: openresearch        # "technical" name
+
 mediawiki_wiki_name: Openresearch   # (optional) wiki name, $wgSitename
 mediawiki_admin_name: Admin
 mediawiki_admin_password: wiki4everyone

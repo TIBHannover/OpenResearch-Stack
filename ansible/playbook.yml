@@ -37,11 +37,6 @@
         common_name: "{{ ansible_fqdn }}"
 
     # robertdebock.httpd
-    httpd_vhosts:
-      - name: mediawiki
-        template: mediawiki
-        servername: localhost
-        documentroot: /var/www/localhost/mediawiki
     ## override not working
     _httpd_config_directory:
       Debian: "{{ httpd_server_root }}/sites-enabled"
@@ -49,15 +44,10 @@
     # robertdebock.php
     #php_max_execution_time: 240     # required to avoid timeout on first scss compilation (Chameleon skin)
 
-    # robertdebock.mysql
-    # mysql_root_password: mysql
-
     # robertdebock.mediawiki
-    #mediawiki_name: openresearch
     mediawiki_major: 1
     mediawiki_minor: 31
     mediawiki_release: 15
-    mediawiki_destination: /var/www/localhost/mediawiki
 
     # MediaWiki installer
     mediawiki_scriptpath: "/{{ mediawiki_name_prefix }}{{ mediawiki_name }}"
@@ -100,6 +90,7 @@
     - name: install additional packages
       ansible.builtin.package:
         name:
+          - git
           - joe
           - php7.3-curl     # ES
           - php7.3-gd
