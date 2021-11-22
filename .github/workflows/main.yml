@@ -20,4 +20,5 @@ jobs:
         uses: roles-ansible/check-ansible-debian-stable-action@master
         with:
           targets: "./ansible/playbook.yml"
+          hosts: "localhost"
           requirements: "./ansible/requirements.yml"
