@@ -22,7 +22,7 @@ jobs:
 
       - name: ansible check with debian:bullseye
 
-        uses: roles-ansible/check-ansible-debian-bullseye-action@master
+        uses: roles-ansible/check-ansible-debian-bullseye-action@main
         with:
           targets: "./ansible/playbook.yml"
           group: "local"
