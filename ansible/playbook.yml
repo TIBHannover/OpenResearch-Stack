@@ -386,6 +386,22 @@
         regexp: '^# \$wgCaptchaClass = "QuestyCaptcha";'
         line: '$wgCaptchaClass = "QuestyCaptcha";'
 
+
+
+    # CookieWarning
+    ## $wgCookieWarningEnabled = true;
+    ## $wgCookieWarningMoreUrl = 'https://openresearch.org/wiki/Openresearch:Privacy_policy';
+    - name: install CookieWarning extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "CookieWarning"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-CookieWarning/archive/60929abb696499138032ea3d086f94c4677f11ef.tar.gz"
+
+
+
     # Extension:DataTransfer 1.1 → 1.2
     - name: install DataTransfer extension
       include_role:
@@ -580,6 +596,16 @@
         mediawiki_extension_registration_type: "require_once"
         mediawiki_extension_disabled: false
         mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/UrlGetParameters-REL1_31-ff69747.tar.gz"
+
+    # Extension:Variables 2.5.1
+    - name: install Variables extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "Variables"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-Variables/archive/v2.5.1.tar.gz"
 
 
     ######################################

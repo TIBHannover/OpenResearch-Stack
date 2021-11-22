@@ -1,0 +1,23 @@
+name: build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: ansible check with debian:stable
+
+        uses: roles-ansible/check-ansible-debian-stable-action@master
+        with:
+          targets: "./ansible/playbook.yml"
+          requirements: "./ansible/requirements.yml"
