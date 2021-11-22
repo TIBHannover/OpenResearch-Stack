@@ -10,7 +10,11 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    ## "Service is in unknown state" issue
+    ## https://github.com/ansible/ansible/issues/71528
+    ## ubuntu-latest: Linux 5.11.0-1021-azure #22~20.04.1-Ubuntu SMP Fri Oct 29 01:11:25 UTC 2021
+
+    runs-on: ubuntu-18.04
 
     steps:
       - uses: actions/checkout@v2
