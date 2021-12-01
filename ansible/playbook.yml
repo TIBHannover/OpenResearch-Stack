@@ -234,7 +234,7 @@
         mediawiki_extension_install_type: "composer"
         mediawiki_extension_disabled: true
         mediawiki_extension_source: "mediawiki/chameleon-skin"
-        mediawiki_extension_source_version: "3.3.0"
+        mediawiki_extension_source_version: "1.7.1"
         mediawiki_extension_config: |
           # wfLoadExtension( 'Bootstrap' );
           # wfLoadSkin( 'chameleon' );
