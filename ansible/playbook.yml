@@ -196,7 +196,13 @@
     ######################################
     # Prepare _custom folder             #
     ######################################
-
+    ## the _custom folder should be mounted or created by the target environment
+    - name: prepare _custom folder
+      ansible.posix.synchronize:
+        src: "{{ mediawiki_custom_source }}"
+        dest: "{{ mediawiki_custom_destination }}"
+        rsync_opts:
+          - "--chmod=Du=rwx,Dg=rx,Do=rx,Fu=rw,Fg=r,Fo=r"
 
     ######################################
     # LocalSettings Changes 1/2          #
@@ -210,16 +216,6 @@
         block: |
           ## short URL
           $wgArticlePath = "/{{ mediawiki_name }}/$1";
-
-          ## debugging
-          #error_reporting( E_ALL | E_STRICT );
-          error_reporting( E_ALL );
-          ini_set("display_errors", 1);
-          $wgShowExceptionDetails = true;
-          #$wgResourceLoaderDebug = true;
-          $wgShowSQLErrors = true;
-          #$wgDebugDumpSql  = true;
-          #$wgDebugToolbar = true;
 
           ## include _custom folder (before extensions)
           if (file_exists( __DIR__."/_custom/10-custom-settings.php" )) {
@@ -628,27 +624,13 @@
         marker_end: "# ----- Custom Settings 90 END"
         marker: " {mark} -----"
         block: |
-          ## set number of jobs to perform per request to 0 since we use cron
-          $wgJobRunRate = 0;
-
-          ## caching
-          $wgMainCacheType = CACHE_MEMCACHED;
-          $wgParserCacheType = CACHE_MEMCACHED;
-          $wgMessageCacheType = CACHE_MEMCACHED;
-          $wgMemCachedServers = [ '127.0.0.1:11211' ];
-
-          ## file extensions
-          $wgFileExtensions = [ 'png', 'gif', 'jpg', 'jpeg', 'svg', 'webp' ];
-
-          ## attaching licensing metadata to pages
-          $wgRightsPage = ""; # Set to the title of a wiki page that describes your license/copyright
-          $wgRightsUrl = "https://creativecommons.org/licenses/by-sa/2.0/de/";
-          $wgRightsText = "CC BY-SA licenses";
-          $wgRightsIcon = "https://licensebuttons.net/l/by-sa/2.0/88x31.png";
-
           ## include _custom folder (after extensions)
           if (file_exists( __DIR__."/_custom/90-custom-settings.php" )) {
             require_once( __DIR__."/_custom/90-custom-settings.php" );
+          }
+
+          if (file_exists( __DIR__."/_custom/90-custom-permissions.php" )) {
+            require_once( __DIR__."/_custom/90-custom-permissions.php" );
           }
 
 
