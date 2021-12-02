@@ -597,6 +597,19 @@
         mediawiki_extension_disabled: false
         mediawiki_extension_source: "https://extdist.wmflabs.org/dist/extensions/TitleBlacklist-REL1_31-631e35c.tar.gz"
 
+    # Extension:TitleIcon 4.1
+    - name: install TitleIcon extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "TitleIcon"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-TitleIcon/archive/refs/tags/4.1.tar.gz"
+        mediawiki_extension_config: |
+          $wgTitleIcon_CSSSelector = "h1.firstHeading";
+          $wgTitleIcon_UseFileNameAsToolTip = false;
+
     # Extension:UrlGetParameters 1.5.0 → REL1_31-ff69747
     - name: install UrlGetParameters extension
       include_role:
