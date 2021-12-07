@@ -472,6 +472,16 @@
         mediawiki_extension_config: |
           $egMapsGeoNamesUser = "geonamesuser";
 
+    # Extension:NativeSvgHandler
+    - name: install NativeSvgHandler extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "NativeSvgHandler"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: false
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-NativeSvgHandler/archive/d3d21f6fe9c26d2c7abe16daccb55ae27972b5eb.tar.gz"
+
     # Extension:Nuke REL1_31-b63e643
     - name: install Nuke extension
       include_role:
@@ -568,6 +578,19 @@
           $srfgFormats[] = "graph";
           # $srfgFormats[] = "excel";
           $srfgFormats[] = "filtered";
+
+    # Extension:SimpleTooltip
+    - name: install SimpleTooltip extension
+      include_role:
+        name: gesinnit.mediawiki_extension
+      vars:
+        mediawiki_extension_name: "SimpleTooltip"
+        mediawiki_extension_install_type: "tar"
+        mediawiki_extension_disabled: true
+        mediawiki_extension_source: "https://github.com/Fannon/SimpleTooltip/archive/refs/tags/v1.1.0.tar.gz"
+        mediawiki_extension_config: |
+          require_once "$IP/extensions/SimpleTooltip/SimpleTooltip.php";
+
 
     # Extension:SmiteSpam 0.3
     - name: install SmiteSpam extension
