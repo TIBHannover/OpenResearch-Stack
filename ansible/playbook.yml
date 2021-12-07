@@ -480,7 +480,7 @@
         mediawiki_extension_name: "NativeSvgHandler"
         mediawiki_extension_install_type: "tar"
         mediawiki_extension_disabled: false
-        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-NativeSvgHandler/archive/d3d21f6fe9c26d2c7abe16daccb55ae27972b5eb.tar.gz"
+        mediawiki_extension_source: "https://github.com/wikimedia/mediawiki-extensions-NativeSvgHandler/archive/845847566ade0de217f1d822a65ea068c7cb7d18.tar.gz"
 
     # Extension:Nuke REL1_31-b63e643
     - name: install Nuke extension
